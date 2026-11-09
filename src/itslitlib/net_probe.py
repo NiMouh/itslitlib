@@ -294,18 +294,13 @@ def _build_multipart_body(
     return b"".join(chunks), boundary
 
 
-def _post_single_file(
+def _post_multipart(
     url: str,
-    field_name: str,
-    filename: str,
-    content_type: str,
-    data: bytes,
+    fields: list[tuple[str, str]],
+    files: list[tuple[str, str, str, bytes]],
     timeout: float,
 ) -> tuple[int, str]:
-    body, boundary = _build_multipart_body(
-        fields=[],
-        files=[(field_name, filename, content_type, data)],
-    )
+    body, boundary = _build_multipart_body(fields=fields, files=files)
     req = urllib.request.Request(
         url,
         data=body,
@@ -325,23 +320,36 @@ def _post_single_file(
 
 
 def _post_probe_files(url: str, transfer: dict[str, object], timeout: float) -> tuple[int, str]:
-    key_status, _ = _post_single_file(
+    key_payload = json.loads(bytes(transfer["key_material"]).decode("utf-8"))
+    fields = [
+        ("transfer_id", str(transfer["transfer_id"])),
+        ("scheme", str(transfer["scheme"])),
+        ("wrapped_key_b64", str(key_payload.get("wrapped_key_b64", ""))),
+        ("iv_b64", str(key_payload.get("iv_b64", ""))),
+        ("key_filename", str(transfer["key_filename"])),
+        ("ciphertext_filename", str(transfer["ciphertext_filename"])),
+    ]
+    files = [
+        (
+            "f",
+            str(transfer["key_filename"]),
+            "application/json",
+            bytes(transfer["key_material"]),
+        ),
+        (
+            "f",
+            str(transfer["ciphertext_filename"]),
+            "application/octet-stream",
+            bytes(transfer["ciphertext"]),
+        ),
+    ]
+    status, response_text = _post_multipart(
         url=url,
-        field_name="f",
-        filename=str(transfer["key_filename"]),
-        content_type="application/json",
-        data=bytes(transfer["key_material"]),
+        fields=fields,
+        files=files,
         timeout=timeout,
     )
-    ciphertext_status, ciphertext_response = _post_single_file(
-        url=url,
-        field_name="f",
-        filename=str(transfer["ciphertext_filename"]),
-        content_type="application/octet-stream",
-        data=bytes(transfer["ciphertext"]),
-        timeout=timeout,
-    )
-    return ciphertext_status, f"key_status={key_status}; ciphertext_status={ciphertext_status}; {ciphertext_response}"
+    return status, response_text
 
 
 def _build_parser() -> argparse.ArgumentParser:
