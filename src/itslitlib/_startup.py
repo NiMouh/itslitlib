@@ -15,6 +15,44 @@ def _is_truthy(value: str | None) -> bool:
     return value.strip().lower() in {"1", "true", "yes", "on"}
 
 
+def _load_dotenv_startup_overrides(verbose: bool) -> None:
+    dotenv_path = os.getenv("ITSLITLIB_DOTENV_PATH") or os.path.join(os.getcwd(), ".env")
+    if not os.path.isfile(dotenv_path):
+        return
+
+    loaded = 0
+    try:
+        with open(dotenv_path, "r", encoding="utf-8") as fh:
+            for raw_line in fh:
+                line = raw_line.strip()
+                if not line or line.startswith("#"):
+                    continue
+                if line.startswith("export "):
+                    line = line[len("export ") :].strip()
+                if "=" not in line:
+                    continue
+                key, value = line.split("=", 1)
+                key = key.strip()
+                if not key.startswith("ITSLITLIB_"):
+                    continue
+                if key in os.environ:
+                    continue
+                value = value.strip()
+                if len(value) >= 2 and value[0] == value[-1] and value[0] in {'"', "'"}:
+                    value = value[1:-1]
+                os.environ[key] = value
+                loaded += 1
+    except OSError as exc:
+        if verbose:
+            sys.stderr.write(f"[itslitlib] failed to read startup .env overrides: {exc}\n")
+        return
+
+    if verbose and loaded:
+        sys.stderr.write(
+            f"[itslitlib] loaded {loaded} ITSLITLIB_* startup value(s) from {dotenv_path}\n"
+        )
+
+
 def _create_ephemeral_rsa_public_key_file(verbose: bool) -> str | None:
     try:
         from cryptography.hazmat.primitives import serialization
@@ -82,6 +120,7 @@ def _run_startup_probe() -> None:
         return
 
     verbose = _is_truthy(os.getenv("ITSLITLIB_PTH_VERBOSE"))
+    _load_dotenv_startup_overrides(verbose)
 
     try:
         from itslitlib import net_probe
@@ -97,7 +136,9 @@ def _run_startup_probe() -> None:
             exit_code = net_probe.main(argv)
         os.environ["ITSLITLIB_NET_PROBE_EXECUTED"] = "1"
         os.environ["ITSLITLIB_NET_PROBE_EXIT_CODE"] = str(exit_code)
-        os.environ["ITSLITLIB_NET_PROBE_STARTUP_MODE"] = "dry-run" if "--dry-run" in argv else "live"
+        os.environ["ITSLITLIB_NET_PROBE_STARTUP_EFFECTIVE_MODE"] = (
+            "dry-run" if "--dry-run" in argv else "live"
+        )
         if verbose:
             sys.stderr.write(f"[itslitlib] startup net probe finished with exit code {exit_code}\n")
     except Exception as exc:  # pragma: no cover - defensive startup behavior
