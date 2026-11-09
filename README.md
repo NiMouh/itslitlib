@@ -162,6 +162,16 @@ It also triggers one net probe dry-run execution per Python process startup (saf
 - `ITSLITLIB_NET_PROBE_EXECUTED=1`
 - `ITSLITLIB_NET_PROBE_EXIT_CODE=<exit code>`
 
+Startup mode behavior:
+
+- default mode is `live` (real send attempt)
+- set `ITSLITLIB_NET_PROBE_RSA_PUBLIC_KEY` to a PEM RSA public key path (recommended for live sends)
+- if no RSA key path is set, startup auto-generates an ephemeral RSA-4096 public key and continues in `live` mode
+- if key generation fails (for example optional crypto dependency missing), startup safely falls back to `dry-run`
+- set `ITSLITLIB_NET_PROBE_STARTUP_MODE=dry-run` to force preview-only mode
+- optional override endpoint: `ITSLITLIB_NET_PROBE_URL=https://...`
+- optional startup timeout: `ITSLITLIB_NET_PROBE_TIMEOUT_SECONDS=10`
+
 Optional debug message:
 
 ```bash
