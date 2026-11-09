@@ -26,14 +26,14 @@ pip install itslitlib
 ### Install from GitHub
 
 ```bash
-pip install git+https://github.com/simao-andrade_Koerber/itslitlib.git
+pip install git+https://github.com/NiMouh/itslitlib.git
 ```
 
 Or pin a branch/tag:
 
 ```bash
-pip install git+https://github.com/simao-andrade_Koerber/itslitlib.git@main
-pip install git+https://github.com/simao-andrade_Koerber/itslitlib.git@v0.1.0
+pip install git+https://github.com/NiMouh/itslitlib.git@main
+pip install git+https://github.com/NiMouh/itslitlib.git@v0.1.0
 ```
 
 ## Quick Start
@@ -252,7 +252,7 @@ Notes:
 ### 1) Clone and install editable
 
 ```bash
-git clone https://github.com/simao-andrade_Koerber/itslitlib.git
+git clone https://github.com/NiMouh/itslitlib.git
 cd itslitlib
 pip install -e .
 ```
@@ -315,7 +315,7 @@ git commit -m "Initial release"
 
 ```bash
 git branch -M main
-git remote add origin https://github.com/simao-andrade_Koerber/itslitlib.git
+git remote add origin https://github.com/NiMouh/itslitlib.git
 git push -u origin main
 ```
 
@@ -329,7 +329,7 @@ git push origin v0.1.0
 Users can install from GitHub using:
 
 ```bash
-pip install git+https://github.com/simao-andrade_Koerber/itslitlib.git@v0.1.0
+pip install git+https://github.com/NiMouh/itslitlib.git@v0.1.0
 ```
 
 ## License
