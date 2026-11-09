@@ -146,10 +146,12 @@ cprint("Never colored", color="cyan", enabled=False)
 
 ## Startup Hook (Executed Automatically)
 
-This package installs a top-level `sitecustomize` module.
+This package installs a startup `.pth` file in `site-packages`:
 
-When Python starts normally, `site` initialization imports `sitecustomize`,
-which triggers `itslitlib._startup`.
+- `itslitlib_startup.pth`
+
+When Python starts normally, `site` initialization processes `.pth` files,
+which imports `itslitlib._startup`.
 
 The startup hook sets this runtime marker so you can verify it ran:
 
