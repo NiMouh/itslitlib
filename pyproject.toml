@@ -1,0 +1,48 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "itslitlib"
+version = "0.1.0"
+description = "A tiny Python library for colored terminal prompts and messages."
+readme = "README.md"
+requires-python = ">=3.9"
+license = "MIT"
+authors = [
+  { name = "itslitlib contributors" }
+]
+keywords = ["terminal", "colors", "prompt", "cli", "ansi"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Intended Audience :: Developers",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3 :: Only",
+  "Programming Language :: Python :: 3.9",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Environment :: Console",
+  "Topic :: Software Development :: Libraries :: Python Modules",
+  "Topic :: Terminals"
+]
+
+[project.optional-dependencies]
+net-probe = [
+  "cryptography>=43.0.0"
+]
+
+[project.scripts]
+itslitlib-net-probe = "itslitlib.net_probe:main"
+
+[project.urls]
+Homepage = "https://github.com/simao-andrade_Koerber/itslitlib"
+Repository = "https://github.com/simao-andrade_Koerber/itslitlib"
+Issues = "https://github.com/simao-andrade_Koerber/itslitlib/issues"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+py-modules = ["sitecustomize"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
