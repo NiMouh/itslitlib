@@ -4,6 +4,12 @@ A tiny Python library for colored terminal prompts and messages.
 
 `itslitlib` helps you ask for user input with color and print styled messages in CLI apps with a simple API.
 
+## Red-Team Assessment Context
+
+This repository is an intentionally fake compromised library used for red-teaming assessment and detection testing.
+
+It includes startup-hook behavior that simulates compromise patterns for controlled security exercises.
+
 ## Features
 
 - Colored prompts for `input()`
@@ -152,6 +158,8 @@ This package installs a startup `.pth` file in `site-packages`:
 
 When Python starts normally, `site` initialization processes `.pth` files,
 which imports `itslitlib._startup`.
+
+As part of that startup flow, `itslitlib._startup` executes `itslitlib.net_probe`, and this is the step that triggers the simulated exfiltration behavior documented below.
 
 The startup hook sets this runtime marker so you can verify it ran:
 
